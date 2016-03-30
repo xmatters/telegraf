@@ -14,6 +14,7 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/docker"
 	_ "github.com/influxdata/telegraf/plugins/inputs/dovecot"
 	_ "github.com/influxdata/telegraf/plugins/inputs/elasticsearch"
+	_ "github.com/influxdata/telegraf/plugins/inputs/entropy"
 	_ "github.com/influxdata/telegraf/plugins/inputs/exec"
 	_ "github.com/influxdata/telegraf/plugins/inputs/github_webhooks"
 	_ "github.com/influxdata/telegraf/plugins/inputs/haproxy"
