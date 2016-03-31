@@ -231,6 +231,12 @@ func (a *Agent) Test() error {
 			return err
 		}
 
+		time.Sleep(2 * time.Second)
+
+		if err := input.Input.Gather(acc); err != nil {
+			return err
+		}
+
 		// Special instructions for some inputs. cpu, for example, needs to be
 		// run twice in order to return cpu usage percentages.
 		switch input.Name {
