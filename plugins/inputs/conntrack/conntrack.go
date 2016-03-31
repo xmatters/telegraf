@@ -1,7 +1,5 @@
 package entropy
 
-// simple.go
-
 import (
 	"fmt"
 	"io/ioutil"
@@ -11,33 +9,46 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
+	"log"
+	"path/filepath"
 )
 
 type Conntrack struct {
 	Path  string
-	Dir   string
-	Files string
+	Dirs  []string
+	Files []string
 }
 
+const (
+	inputName = "conntrack"
+)
+
 var dfltPath = "conntrack"
-var dfltDirs = []string{"/proc/sys/net/ipv4/netfilter",
-	"/proc/sys/net/netfilter"}
-var dfltFiles = []string{"ip_conntrack_count,ip_conntrack_max",
-	"nf_conntrack_count,nf_conntrack_max"}
+
+var dfltDirs = []string{
+	"/proc/sys/net/ipv4/netfilter",
+	"/proc/sys/net/netfilter",
+}
+
+var dfltFiles = []string{
+	"ip_conntrack_count",
+	"ip_conntrack_max",
+	"nf_conntrack_count",
+	"nf_conntrack_max",
+}
 
 func (c *Conntrack) setDefaults() {
 	if c.Path == "" {
 		c.Path = dfltPath
 	}
 
-	if c.Dir == "" {
-		c.Dir = dfltDir
+	if len(c.Dirs) == 0 {
+		c.Dirs = dfltDirs
 	}
 
-	if c.Files == "" {
+	if len(c.Files) == 0 {
 		c.Files = dfltFiles
 	}
-
 }
 
 var dfltProc = "/proc/sys/kernel/random/entropy_avail"
@@ -53,30 +64,47 @@ func (c *Conntrack) SampleConfig() string {
 }
 
 func (c *Conntrack) Gather(acc telegraf.Accumulator) error {
-	ent := 0
-	proc := e.Proc
+	c.setDefaults()
 
-	if proc == "" {
-		proc = dfltProc
+	var metricKey string
+	fields := make(map[string]interface{})
+
+	for _, dir := range c.Dirs {
+		for _, file := range c.Files {
+			// NOTE: no system will have both nf_ and ip_ prefixes, so we're safe to branch on suffix only.
+
+			parts := strings.SplitN(file, "_", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			metricKey = "ip_" + parts[1]
+
+			fName := filepath.Join(dir, file)
+			if _, err := os.Stat(fName); err != nil {
+				continue
+			}
+
+			contents, err := ioutil.ReadFile(fName)
+			if err != nil {
+				log.Printf("failed to read file '%s': %v", fName, err)
+			}
+
+			v := strings.TrimSpace(string(contents))
+			fields[metricKey], err = strconv.ParseFloat(v, 64)
+			if err != nil {
+				log.Printf("failed to parse metric, expected number but found '%s': %v", v, err)
+			}
+		}
 	}
 
-	if _, err := os.Stat(proc); err != nil {
-		return fmt.Errorf("could not stat proc file '%s': %v", proc, err)
+	if len(fields) == 0 {
+		return fmt.Errorf("Conntrack input failed to collect metrics. Is the conntrack kernel module loaded?")
 	}
 
-	content, err := ioutil.ReadFile(proc)
-	if err != nil {
-		return fmt.Errorf("failed to read proc file '%s': %v", proc, err)
-	}
-
-	ent, err = strconv.Atoi(strings.TrimSpace(string(content)))
-	if err != nil {
-		return fmt.Errorf("expected integer content but found %s: %v", content, err)
-	}
-	acc.AddFields("entropy", map[string]interface{}{"available": ent}, nil)
+	acc.AddFields(inputName, fields, nil)
 	return nil
 }
 
 func init() {
-	inputs.Add("entropy", func() telegraf.Input { return &Entropy{} })
+	inputs.Add(inputName, func() telegraf.Input { return &Conntrack{} })
 }
