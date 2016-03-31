@@ -23,8 +23,6 @@ const (
 	inputName = "conntrack"
 )
 
-var dfltPath = "conntrack"
-
 var dfltDirs = []string{
 	"/proc/sys/net/ipv4/netfilter",
 	"/proc/sys/net/netfilter",
@@ -38,10 +36,6 @@ var dfltFiles = []string{
 }
 
 func (c *Conntrack) setDefaults() {
-	if c.Path == "" {
-		c.Path = dfltPath
-	}
-
 	if len(c.Dirs) == 0 {
 		c.Dirs = dfltDirs
 	}
@@ -51,16 +45,19 @@ func (c *Conntrack) setDefaults() {
 	}
 }
 
-var dfltProc = "/proc/sys/kernel/random/entropy_avail"
-
 func (c *Conntrack) Description() string {
-	// TODO
-	return "uses /proc to collect available entropy"
+	return "Collects conntrack stats from the configured directories and files. Paths that do not " +
+	"exist on the system will be ignored. One datapoint will be generated for each file found."
 }
 
+var sampleConfig = ` # The following defaults would work with multiple versions of contrack. Note the nf_ and ip_
+ # filename prefixes are mutually exclusive across conntrack versions, as are the directory locations:
+ files = ["ip_conntrack_count","ip_conntrack_max","nf_conntrack_count","nf_conntrack_max"]
+ dirs = ["/proc/sys/net/ipv4/netfilter","/proc/sys/net/netfilter"]
+`
+
 func (c *Conntrack) SampleConfig() string {
-	// TODO
-	return fmt.Sprintf("proc = %s # path to entropy file", dfltProc)
+	return sampleConfig
 }
 
 func (c *Conntrack) Gather(acc telegraf.Accumulator) error {
@@ -72,7 +69,6 @@ func (c *Conntrack) Gather(acc telegraf.Accumulator) error {
 	for _, dir := range c.Dirs {
 		for _, file := range c.Files {
 			// NOTE: no system will have both nf_ and ip_ prefixes, so we're safe to branch on suffix only.
-
 			parts := strings.SplitN(file, "_", 2)
 			if len(parts) < 2 {
 				continue
