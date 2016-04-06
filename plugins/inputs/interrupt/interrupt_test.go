@@ -3,10 +3,11 @@ package entropy
 import (
 	"bytes"
 	"testing"
-	//	"time"
 
 	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/assert"
+	"math"
+	"time"
 )
 
 func TestCountInterrupt(t *testing.T) {
@@ -15,23 +16,85 @@ func TestCountInterrupt(t *testing.T) {
 	assert.Len(t, counts, 2)
 	assert.Equal(t, uint64(57), counts[0])
 	assert.Equal(t, uint64(75), counts[1])
-	assert.Equal(t, "IO-APIC.8-edge.rtc0.8", label)
+	assert.Equal(t, int8, label)
 }
 
 func TestFirstGatherReturnsAllZeros(t *testing.T) {
-
-	savedReadProcFile := readProcFile
-	defer func() { readProcFile = savedReadProcFile }()
+	saved := readProcFile
+	defer func() { readProcFile = saved }()
 	readProcFile = newReadProcFileStub()
 
 	i := &Interrupt{}
-
 	acc := &testutil.Accumulator{}
 	i.Gather(acc)
 	acc.AssertContainsTaggedFields(t, inputName, expectedTaggedFields, map[string]string{"cpu": "cpu0"})
 	acc.AssertContainsTaggedFields(t, inputName, expectedTaggedFields, map[string]string{"cpu": "cpu1"})
 	acc.AssertContainsFields(t, inputName, expectedUntaggedFields)
+}
 
+func TestTenSecondInterval(t *testing.T) {
+	savedNow := now
+	savedRead := readProcFile
+	defer func() {
+		now = savedNow
+		readProcFile = savedRead
+	}()
+
+	readProcFile = newReadProcFileStub()
+	expectedCpu0 := make(map[string]interface{})
+	expectedCpu1 := make(map[string]interface{})
+
+	for k, counts := range expectedTenSecondIntervalByCpu {
+		expectedCpu0[k] = counts[0]
+		expectedCpu1[k] = counts[1]
+	}
+
+	i := &Interrupt{}
+	acc := &testutil.Accumulator{}
+	curTime := time.Now()
+
+	now = func() time.Time { return curTime.Add(-10 * time.Second)}
+	i.Gather(acc)
+
+	acc = &testutil.Accumulator{}
+	now = func() time.Time { return curTime }
+	i.Gather(acc)
+
+	acc.AssertContainsTaggedFields(t, inputName, expectedCpu0, map[string]string{"cpu": "cpu0"})
+	acc.AssertContainsTaggedFields(t, inputName, expectedCpu1, map[string]string{"cpu": "cpu1"})
+	acc.AssertContainsFields(t, inputName, map[string]interface{}{intERR: uint64(1), intMIS: uint64(1)})
+}
+
+func TestDerivative(t *testing.T) {
+	type m struct {
+		count     uint64
+		prevCount uint64
+		interval  time.Duration
+		expected  uint64
+	}
+
+	data := []m{
+		m{uint64(10), uint64(0), time.Second, uint64(10)},
+		m{uint64(160), uint64(100), 60 * time.Second, uint64(1)},
+		m{uint64(9462), uint64(0), 50 * time.Minute, uint64(3)},
+
+		// Test rollovers
+		m{uint64(1), math.MaxUint64 - uint64(10), time.Second, uint64(12)},
+		m{uint64(0), math.MaxUint64, time.Second, uint64(1)},
+	}
+
+	now := time.Now()
+	i := &Interrupt{
+		prevMetrics: map[string][]uint64{
+			"foo": []uint64{uint64(0)},
+		},
+		prevTime: now,
+	}
+	for _, dp := range data {
+		i.prevMetrics["foo"][0] = dp.prevCount
+		actual := i.derivative("foo", 0, dp.count, now.Add(dp.interval))
+		assert.Equal(t, dp.expected, actual)
+	}
 }
 
 func newReadProcFileStub() func(string) (*bytes.Buffer, error) {
@@ -45,40 +108,104 @@ func newReadProcFileStub() func(string) (*bytes.Buffer, error) {
 	}
 }
 
+const (
+	int0   = "IO-APIC.2-edge.timer.0"
+	int1   = "IO-APIC.1-edge.i8042.1"
+	int8   = "IO-APIC.8-edge.rtc0.8"
+	int9   = "IO-APIC.9-fasteoi.acpi.9"
+	int12  = "IO-APIC.12-edge.i8042.12"
+	int14  = "IO-APIC.14-edge.ata_piix.14"
+	int15  = "IO-APIC.15-edge.ata_piix.15"
+	int19  = "IO-APIC.19-fasteoi.enp0s3.19"
+	int20  = "IO-APIC.20-fasteoi.vboxguest.20"
+	int21  = "IO-APIC.21-fasteoi.0000:00:0d.0_.snd_intel8x0.21"
+	int22  = "IO-APIC.22-fasteoi.ohci_hcd:usb1.22"
+	intNMI = "Non-maskable.interrupts.NMI"
+	intLOC = "Local.timer.interrupts.LOC"
+	intSPU = "Spurious.interrupts.SPU"
+	intPMI = "Performance.monitoring.interrupts.PMI"
+	intIWI = "IRQ.work.interrupts.IWI"
+	intRTR = "APIC.ICR.read.retries.RTR"
+	intRES = "Rescheduling.interrupts.RES"
+	intCAL = "Function.call.interrupts.CAL"
+	intTLB = "TLB.shootdowns.TLB"
+	intTRM = "Thermal.event.interrupts.TRM"
+	intTHR = "Threshold.APIC.interrupts.THR"
+	intDFR = "Deferred.Error.APIC.interrupts.DFR"
+	intMCE = "Machine.check.exceptions.MCE"
+	intMCP = "Machine.check.polls.MCP"
+	intHYP = "Hypervisor.callback.interrupts.HYP"
+	intPIN = "Posted-interrupt.notification.event.PIN"
+	intPIW = "Posted-interrupt.wakeup.event.PIW"
+	intERR = "ERR"
+	intMIS = "MIS"
+)
+
 var expectedTaggedFields = map[string]interface{}{
-	"APIC.ICR.read.retries.RTR":                        uint64(0),
-	"Deferred.Error.APIC.interrupts.DFR":               uint64(0),
-	"Hypervisor.callback.interrupts.HYP":               uint64(0),
-	"IO-APIC.1-edge.i8042.1":                           uint64(0),
-	"IO-APIC.12-edge.i8042.12":                         uint64(0),
-	"IO-APIC.14-edge.ata_piix.14":                      uint64(0),
-	"IO-APIC.15-edge.ata_piix.15":                      uint64(0),
-	"IO-APIC.19-fasteoi.enp0s3.19":                     uint64(0),
-	"IO-APIC.2-edge.timer.0":                           uint64(0),
-	"IO-APIC.20-fasteoi.vboxguest.20":                  uint64(0),
-	"IO-APIC.21-fasteoi.0000:00:0d.0_.snd_intel8x0.21": uint64(0),
-	"IO-APIC.22-fasteoi.ohci_hcd:usb1.22":              uint64(0),
-	"IO-APIC.8-edge.rtc0.8":                            uint64(0),
-	"IRQ.work.interrupts.IWI":                          uint64(0),
-	"Machine.check.exceptions.MCE":                     uint64(0),
-	"Non-maskable.interrupts.NMI":                      uint64(0),
-	"Performance.monitoring.interrupts.PMI":            uint64(0),
-	"Posted-interrupt.notification.event.PIN":          uint64(0),
-	"Posted-interrupt.wakeup.event.PIW":                uint64(0),
-	"Spurious.interrupts.SPU":                          uint64(0),
-	"Thermal.event.interrupts.TRM":                     uint64(0),
-	"Threshold.APIC.interrupts.THR":                    uint64(0),
-	"Rescheduling.interrupts.RES":                      uint64(0),
-	"Machine.check.polls.MCP":                          uint64(0),
-	"IO-APIC.9-fasteoi.acpi.9":                         uint64(0),
-	"Function.call.interrupts.CAL":                     uint64(0),
-	"Local.timer.interrupts.LOC":                       uint64(0),
-	"TLB.shootdowns.TLB":                               uint64(0),
+	int0:   uint64(0),
+	int1:   uint64(0),
+	int8:   uint64(0),
+	int9:   uint64(0),
+	int12:  uint64(0),
+	int14:  uint64(0),
+	int15:  uint64(0),
+	int19:  uint64(0),
+	int20:  uint64(0),
+	int21:  uint64(0),
+	int22:  uint64(0),
+	intNMI: uint64(0),
+	intLOC: uint64(0),
+	intSPU: uint64(0),
+	intPMI: uint64(0),
+	intIWI: uint64(0),
+	intRTR: uint64(0),
+	intRES: uint64(0),
+	intCAL: uint64(0),
+	intTLB: uint64(0),
+	intTRM: uint64(0),
+	intTHR: uint64(0),
+	intDFR: uint64(0),
+	intMCE: uint64(0),
+	intMCP: uint64(0),
+	intHYP: uint64(0),
+	intPIN: uint64(0),
+	intPIW: uint64(0),
+}
+
+var expectedTenSecondIntervalByCpu = map[string][2]interface{}{
+int0:   [2]interface{}{uint64(10), uint64(1)},
+int1:   [2]interface{}{uint64(10), uint64(10)},
+int8:   [2]interface{}{uint64(1), uint64(1)},
+int9:   [2]interface{}{uint64(2), uint64(1)},
+int12:  [2]interface{}{uint64(3), uint64(3)},
+int14:  [2]interface{}{uint64(1), uint64(1)},
+int15:  [2]interface{}{uint64(1), uint64(1)},
+int19:  [2]interface{}{uint64(10), uint64(1)},
+int20:  [2]interface{}{uint64(10), uint64(10)},
+int21:  [2]interface{}{uint64(10), uint64(20)},
+int22:  [2]interface{}{uint64(1), uint64(2)},
+intNMI: [2]interface{}{uint64(0), uint64(1)},
+intLOC: [2]interface{}{uint64(1), uint64(1)},
+intSPU: [2]interface{}{uint64(6), uint64(1)},
+intPMI: [2]interface{}{uint64(1), uint64(1)},
+intIWI: [2]interface{}{uint64(2), uint64(1)},
+intRTR: [2]interface{}{uint64(100), uint64(100)},
+intRES: [2]interface{}{uint64(100), uint64(100)},
+intCAL: [2]interface{}{uint64(100), uint64(100)},
+intTLB: [2]interface{}{uint64(1), uint64(10)},
+intTRM: [2]interface{}{uint64(2), uint64(10)},
+intTHR: [2]interface{}{uint64(1), uint64(1)},
+intDFR: [2]interface{}{uint64(1), uint64(1)},
+intMCE: [2]interface{}{uint64(1), uint64(802)},
+intMCP: [2]interface{}{uint64(1), uint64(5)},
+intHYP: [2]interface{}{uint64(1), uint64(1)},
+intPIN: [2]interface{}{uint64(1), uint64(1)},
+intPIW: [2]interface{}{uint64(1), uint64(1)},
 }
 
 var expectedUntaggedFields = map[string]interface{}{
-	"ERR": uint64(0),
-	"MIS": uint64(0),
+	intERR: uint64(0),
+	intMIS: uint64(0),
 }
 
 var testData0 = `          CPU0       CPU1
