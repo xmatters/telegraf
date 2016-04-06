@@ -21,8 +21,14 @@ const (
 
 type Interrupt struct {
 	Proc        string
+	Trace       bool
 	prevMetrics map[string][]uint64
 	prevTime    time.Time
+	readProcFile func (s string) (*bytes.Buffer, error)
+}
+
+type Timer interface {
+	Now() time.Time
 }
 
 const (
@@ -59,9 +65,9 @@ func countInterrupt(line string, cpuCount int) (string, []uint64) {
 	// Any columns beyond the label and CPU counts should be used as a label prefix
 	var buffer bytes.Buffer
 	r := strings.NewReplacer(
-		", ", "-",
+		",", "_",
 		" ", "_")
-	for i := cpuCount; i < len(cols); i++ {
+	for i := cpuCount + 1; i < len(cols); i++ {
 		if buffer.Len() > 0 {
 			buffer.WriteString(".")
 		}
@@ -71,12 +77,12 @@ func countInterrupt(line string, cpuCount int) (string, []uint64) {
 	if buffer.Len() > 0 {
 		buffer.WriteString(".")
 	}
-	buffer.WriteString(cols[0])
+	buffer.WriteString(strings.TrimRight(cols[0], ":"))
 	labelPrefix := buffer.String()
 
 	counts := make([]uint64, 0, cpuCount)
 	// Note: some rows don't have a value for every CPU (eg ERR and MIS)
-	for i := 1; i < cpuCount && i < len(cols); i++ {
+	for i := 1; i <= cpuCount && i < len(cols); i++ {
 		num, err := strconv.ParseUint(cols[i], 10, 64)
 		if err != nil {
 			log.Printf("Failed to parse number '%s' as count in line '%s': %v", cols[i], line, err)
@@ -87,14 +93,14 @@ func countInterrupt(line string, cpuCount int) (string, []uint64) {
 	return labelPrefix, counts
 }
 
-func (i *Interrupt) readProcFile() (*bytes.Buffer, error) {
-	if _, err := os.Stat(i.Proc); err != nil {
-		return nil, fmt.Errorf("failed to stat file '%s': %v", i.Proc, err)
+var readProcFile = func (procFile string) (*bytes.Buffer, error) {
+	if _, err := os.Stat(procFile); err != nil {
+		return nil, fmt.Errorf("failed to stat file '%s': %v", procFile, err)
 	}
 
-	contents, err := ioutil.ReadFile(i.Proc)
+	contents, err := ioutil.ReadFile(procFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file '%s': %v", i.Proc, err)
+		return nil, fmt.Errorf("failed to read file '%s': %v", procFile, err)
 	}
 
 	return bytes.NewBuffer(contents), nil
@@ -102,7 +108,8 @@ func (i *Interrupt) readProcFile() (*bytes.Buffer, error) {
 
 func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 	i.setDefaults()
-	contents, err := i.readProcFile()
+	contents, err := i.readProcFile(i.Proc)
+	//fmt.Printf("Contents: %v\n", contents)
 	now := time.Now()
 
 	if err != nil {
@@ -126,9 +133,12 @@ func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 	fieldsByCpu := make([]map[string]interface{}, numCpus)
 	globalFields := make(map[string]interface{})
 
+	fmt.Printf("numCpus: %d\n", numCpus)
 	for i := 0; i < numCpus; i++ {
 		fieldsByCpu[i] = make(map[string]interface{})
 	}
+
+	fmt.Printf("Fields by CPU: %d", len(fieldsByCpu))
 
 	for label, counts := range metrics {
 		if len(counts) == numCpus {
@@ -183,5 +193,8 @@ func (i *Interrupt) derivative(label string, cpuIdx int, count uint64, now time.
 }
 
 func init() {
-	inputs.Add(inputName, func() telegraf.Input { return &Interrupt{} })
+	input := &Interrupt{
+		readProcFile: readProcFile,
+	}
+	inputs.Add(inputName, func() telegraf.Input { return input })
 }
