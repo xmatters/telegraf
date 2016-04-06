@@ -4,10 +4,9 @@ import (
   "bytes"
   "fmt"
   "io"
-  "io/ioutil"
   "strconv"
   "strings"
-  //"os/exec"
+  "os/exec"
 
   "github.com/influxdata/telegraf"
   "github.com/influxdata/telegraf/plugins/inputs"
