@@ -24,7 +24,6 @@ type Interrupt struct {
 	Trace       bool
 	prevMetrics map[string][]uint64
 	prevTime    time.Time
-	readProcFile func (s string) (*bytes.Buffer, error)
 }
 
 type Timer interface {
@@ -108,7 +107,7 @@ var readProcFile = func (procFile string) (*bytes.Buffer, error) {
 
 func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 	i.setDefaults()
-	contents, err := i.readProcFile(i.Proc)
+	contents, err := readProcFile(i.Proc)
 	//fmt.Printf("Contents: %v\n", contents)
 	now := time.Now()
 
@@ -193,8 +192,5 @@ func (i *Interrupt) derivative(label string, cpuIdx int, count uint64, now time.
 }
 
 func init() {
-	input := &Interrupt{
-		readProcFile: readProcFile,
-	}
-	inputs.Add(inputName, func() telegraf.Input { return input })
+	inputs.Add(inputName, func() telegraf.Input { return &Interrupt{} })
 }
