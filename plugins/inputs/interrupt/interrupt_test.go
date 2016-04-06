@@ -9,19 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TODO: use telegraf.testutil.Accumulator?
-/*
-type MockAccum struct {
-	fields map[string]interface{}
-	tags map[string]string
-}
-
-func (m *MockAccum) Add(measurement string, value interface{}, t ...time.Time) {}
-func (m *MockAccum) AddFields(measurement string, tags map[string]string, t ...time.Time) {}
-func (m *MockAccum) Debug() bool { return false}
-func (m *MockAccum) SetDebug(enabled bool) {}
-*/
-
 func TestCountInterrupt(t *testing.T) {
 	line := "8:         57         75   IO-APIC   8-edge      rtc0"
 	label, counts := countInterrupt(line, 2)
@@ -29,19 +16,15 @@ func TestCountInterrupt(t *testing.T) {
 	assert.Equal(t, uint64(57), counts[0])
 	assert.Equal(t, uint64(75), counts[1])
 	assert.Equal(t, "IO-APIC.8-edge.rtc0.8", label)
-
 }
 
 func TestFirstGatherReturnsAllZeros(t *testing.T) {
-	invocation := 0
-	testData := []string{testData0, testData1}
-	i := &Interrupt{
-		readProcFile: func(s string) (*bytes.Buffer, error) {
-			data := bytes.NewBuffer([]byte(testData[invocation]))
-			invocation++
-			return data, nil
-		},
-	}
+
+	savedReadProcFile := readProcFile
+	defer func() { readProcFile = savedReadProcFile }()
+	readProcFile = newReadProcFileStub()
+
+	i := &Interrupt{}
 
 	acc := &testutil.Accumulator{}
 	i.Gather(acc)
@@ -49,6 +32,17 @@ func TestFirstGatherReturnsAllZeros(t *testing.T) {
 	acc.AssertContainsTaggedFields(t, inputName, expectedTaggedFields, map[string]string{"cpu": "cpu1"})
 	acc.AssertContainsFields(t, inputName, expectedUntaggedFields)
 
+}
+
+func newReadProcFileStub() func(string) (*bytes.Buffer, error) {
+	invocation := 0
+	var testData = []string{testData0, testData1}
+
+	return func(s string) (*bytes.Buffer, error) {
+		data := bytes.NewBuffer([]byte(testData[invocation]))
+		invocation++
+		return data, nil
+	}
 }
 
 var expectedTaggedFields = map[string]interface{}{
