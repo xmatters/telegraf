@@ -26,10 +26,6 @@ type Interrupt struct {
 	prevTime    time.Time
 }
 
-type Timer interface {
-	Now() time.Time
-}
-
 const (
 	dfltProc = "/proc/interrupts"
 )
@@ -92,6 +88,10 @@ func countInterrupt(line string, cpuCount int) (string, []uint64) {
 	return labelPrefix, counts
 }
 
+var now = func () (time.Time) {
+	return time.Now()
+}
+
 var readProcFile = func (procFile string) (*bytes.Buffer, error) {
 	if _, err := os.Stat(procFile); err != nil {
 		return nil, fmt.Errorf("failed to stat file '%s': %v", procFile, err)
@@ -109,7 +109,7 @@ func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 	i.setDefaults()
 	contents, err := readProcFile(i.Proc)
 	//fmt.Printf("Contents: %v\n", contents)
-	now := time.Now()
+	curTime := now()
 
 	if err != nil {
 		return err
@@ -132,20 +132,17 @@ func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 	fieldsByCpu := make([]map[string]interface{}, numCpus)
 	globalFields := make(map[string]interface{})
 
-	fmt.Printf("numCpus: %d\n", numCpus)
 	for i := 0; i < numCpus; i++ {
 		fieldsByCpu[i] = make(map[string]interface{})
 	}
 
-	fmt.Printf("Fields by CPU: %d", len(fieldsByCpu))
-
 	for label, counts := range metrics {
 		if len(counts) == numCpus {
 			for cpuIdx, count := range counts {
-				fieldsByCpu[cpuIdx][label] = i.derivative(label, cpuIdx, count, now)
+				fieldsByCpu[cpuIdx][label] = i.derivative(label, cpuIdx, count, curTime)
 			}
 		} else if len(counts) < numCpus {
-			globalFields[label] = i.derivative(label, 0, counts[0], now)
+			globalFields[label] = i.derivative(label, 0, counts[0], curTime)
 		}
 	}
 
@@ -154,12 +151,12 @@ func (i *Interrupt) Gather(acc telegraf.Accumulator) error {
 		acc.AddFields(inputName, fields, map[string]string{"cpu": fmt.Sprintf("cpu%d", cpuIdx)})
 	}
 
-	i.prevTime = now
+	i.prevTime = curTime
 	i.prevMetrics = metrics
 	return nil
 }
 
-func (i *Interrupt) derivative(label string, cpuIdx int, count uint64, now time.Time) uint64 {
+func (i *Interrupt) derivative(label string, cpuIdx int, count uint64, curTime time.Time) uint64 {
 	if i.prevTime.IsZero() || i.prevMetrics == nil {
 		return 0
 	}
@@ -169,26 +166,22 @@ func (i *Interrupt) derivative(label string, cpuIdx int, count uint64, now time.
 		return 0
 	}
 
-	prev := prevCounts[cpuIdx]
-	if prev == 0 {
-		return 0
-	}
-
 	var yDelta uint64
-
+	prev := prevCounts[cpuIdx]
 	if prev <= count {
 		yDelta = count - prev
 	} else {
 		// must have rolled over
-		yDelta = count + (math.MaxUint64 - prev)
+		yDelta = count + (math.MaxUint64 - prev) + 1
 	}
 
-	xDelta := now.Sub(i.prevTime).Seconds()
+	xDelta := curTime.Sub(i.prevTime).Seconds()
 	if xDelta == 0 {
 		return 0
 	}
 
-	return uint64(float64(yDelta) / float64(xDelta))
+	result := float64(yDelta) / float64(xDelta)
+	return uint64(math.Floor(result + 0.5))
 }
 
 func init() {
