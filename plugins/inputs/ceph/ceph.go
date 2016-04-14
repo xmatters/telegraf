@@ -60,6 +60,7 @@ func (c *Ceph) SampleConfig() string {
 }
 
 func (c *Ceph) Gather(acc telegraf.Accumulator) error {
+	c.setDefaults()
 	sockets, err := findSockets(c)
 	if err != nil {
 		return fmt.Errorf("failed to find sockets at path '%s': %v", c.SocketDir, err)
