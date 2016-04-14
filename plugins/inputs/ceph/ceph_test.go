@@ -16,6 +16,11 @@ const (
 	epsilon = float64(0.00000001)
 )
 
+func TestParseSockId(t *testing.T) {
+	s := parseSockId(sockFile(osdPrefix, 1), osdPrefix, sockSuffix)
+	assert.Equal(t, s, "1")
+}
+
 func TestParseMonDump(t *testing.T) {
 	dump, err := parseDump(monPerfDump)
 	assert.NoError(t, err)
