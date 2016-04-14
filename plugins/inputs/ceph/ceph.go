@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"path/filepath"
+	"os/exec"
 )
 
 const (
@@ -65,7 +66,7 @@ func (c *Ceph) Gather(acc telegraf.Accumulator) error {
 	}
 
 	for _, s := range sockets {
-		dump, err := perfDump(s.socket)
+		dump, err := perfDump(c.CephBinary, s)
 		if err != nil {
 			log.Printf("error reading from socket '%s': %v", s.socket, err)
 			continue
@@ -88,8 +89,25 @@ func init() {
 	inputs.Add(measurement, func() telegraf.Input { return &Ceph{} })
 }
 
-var perfDump = func(sockPath string) (string, error) {
-	return "", nil
+var perfDump = func(binary string, socket *socket) (string, error) {
+	cmdArgs := []string{"--admin-daemon", socket.socket}
+	if socket.sockType == typeOsd {
+		cmdArgs = append(cmdArgs, "perf", "dump")
+	} else if socket.sockType == typeMon {
+		cmdArgs = append(cmdArgs, "perfcounters_dump")
+	} else {
+		return "", fmt.Errorf("ignoring unknown socket type: %s", socket.sockType)
+	}
+
+	cmd := exec.Command(binary, cmdArgs...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("error running ceph dump: %s", err)
+	}
+
+	return out.String(), nil
 }
 
 var findSockets = func(c *Ceph) ([]*socket, error) {
