@@ -42,7 +42,7 @@ func TestGather(t *testing.T) {
 		return []*socket{&socket{"osd.1", typeOsd, ""}}, nil
 	}
 
-	perfDump = func(sockPath string) (string, error) {
+	perfDump = func(binary string, s *socket) (string, error) {
 		return osdPerfDump, nil
 	}
 
