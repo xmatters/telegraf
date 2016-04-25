@@ -46,14 +46,15 @@ func (c *Conntrack) setDefaults() {
 }
 
 func (c *Conntrack) Description() string {
-	return "Collects conntrack stats from the configured directories and files. Paths that do not " +
-	"exist on the system will be ignored. One datapoint will be generated for each file found."
+	return "Collects conntrack stats from the configured directories and files."
 }
 
-var sampleConfig = ` # The following defaults would work with multiple versions of contrack. Note the nf_ and ip_
- # filename prefixes are mutually exclusive across conntrack versions, as are the directory locations:
- files = ["ip_conntrack_count","ip_conntrack_max","nf_conntrack_count","nf_conntrack_max"]
- dirs = ["/proc/sys/net/ipv4/netfilter","/proc/sys/net/netfilter"]
+var sampleConfig = `
+  ## The following defaults would work with multiple versions of contrack. Note the nf_ and ip_
+  ## filename prefixes are mutually exclusive across conntrack versions, as are the directory locations:
+  [[inputs.conntrack]]
+    files = ["ip_conntrack_count","ip_conntrack_max","nf_conntrack_count","nf_conntrack_max"]
+    dirs = ["/proc/sys/net/ipv4/netfilter","/proc/sys/net/netfilter"]
 `
 
 func (c *Conntrack) SampleConfig() string {
