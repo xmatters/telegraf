@@ -39,6 +39,7 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/nginx"
 	_ "github.com/influxdata/telegraf/plugins/inputs/nsq"
 	_ "github.com/influxdata/telegraf/plugins/inputs/ntpq"
+	_ "github.com/influxdata/telegraf/plugins/inputs/openstack"
 	_ "github.com/influxdata/telegraf/plugins/inputs/passenger"
 	_ "github.com/influxdata/telegraf/plugins/inputs/phpfpm"
 	_ "github.com/influxdata/telegraf/plugins/inputs/ping"
