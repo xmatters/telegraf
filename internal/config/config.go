@@ -93,9 +93,15 @@ type AgentConfig struct {
 	// ie, a jitter of 5s and interval 10s means flushes will happen every 10-15s
 	FlushJitter internal.Duration
 
+	// MetricBatchSize is the maximum number of metrics that is wrote to an
+	// output plugin in one call.
+	MetricBatchSize int
+
 	// MetricBufferLimit is the max number of metrics that each output plugin
 	// will cache. The buffer is cleared when a successful write occurs. When
-	// full, the oldest metrics will be overwritten.
+	// full, the oldest metrics will be overwritten. This number should be a
+	// multiple of MetricBatchSize. Due to current implementation, this could
+	// not be less than 2 times MetricBatchSize.
 	MetricBufferLimit int
 
 	// FlushBufferWhenFull tells Telegraf to flush the metric buffer whenever
@@ -182,11 +188,13 @@ var header = `# Telegraf Configuration
   ## ie, if interval="10s" then always collect on :00, :10, :20, etc.
   round_interval = true
 
-  ## Telegraf will cache metric_buffer_limit metrics for each output, and will
-  ## flush this buffer on a successful write.
-  metric_buffer_limit = 1000
-  ## Flush the buffer whenever full, regardless of flush_interval.
-  flush_buffer_when_full = true
+  ## Telegraf will send metrics to outputs in batches of at
+  ## most metric_batch_size metrics.
+  metric_batch_size = 1000
+  ## For failed writes, telegraf will cache metric_buffer_limit metrics for each
+  ## output, and will flush this buffer on a successful write. Oldest metrics
+  ## are dropped first when this buffer fills.
+  metric_buffer_limit = 10000
 
   ## Collection jitter is used to jitter the collection by a random amount.
   ## Each plugin will sleep for a random time within jitter before collecting.
@@ -525,11 +533,8 @@ func (c *Config) addOutput(name string, table *ast.Table) error {
 		return err
 	}
 
-	ro := internal_models.NewRunningOutput(name, output, outputConfig)
-	if c.Agent.MetricBufferLimit > 0 {
-		ro.MetricBufferLimit = c.Agent.MetricBufferLimit
-	}
-	ro.FlushBufferWhenFull = c.Agent.FlushBufferWhenFull
+	ro := internal_models.NewRunningOutput(name, output, outputConfig,
+		c.Agent.MetricBatchSize, c.Agent.MetricBufferLimit)
 	c.Outputs = append(c.Outputs, ro)
 	return nil
 }
