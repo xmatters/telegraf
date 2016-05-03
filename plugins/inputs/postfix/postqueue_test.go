@@ -1,20 +1,21 @@
 package system
 
 import (
-  //"io/ioutil"
-  //"os"
-  "testing"
+	//"io/ioutil"
+	//"os"
+	"testing"
 
-  "github.com/influxdata/telegraf/testutil"
-  "github.com/stretchr/testify/assert"
+	"fmt"
+	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractingTotalCount(t *testing.T) {
 
-  k := Postqueue {
-    getPostQueueLog : func() ([]byte, error) {
+	k := Postqueue{
+		getPostQueueLog: func() ([]byte, error) {
 
-      log := `6C2BF14C1893     3334 Wed Mar 30 01:51:53  MAILER-DAEMON
+			log := `6C2BF14C1893     3334 Wed Mar 30 01:51:53  MAILER-DAEMON
 (delivery temporarily suspended: Host or domain name not found. Name service error for name=mail.abc.com type=AAAA: Host not found)
                                          jsmith@abc.com
 
@@ -28,64 +29,57 @@ func TestExtractingTotalCount(t *testing.T) {
 
 -- 2106 Kbytes in 205 Requests.`
 
-      out := []byte(log) 
-      return out, nil
-    },
-  }
+			out := []byte(log)
+			return out, nil
+		},
+	}
 
-  acc := testutil.Accumulator{}
-  err := k.Gather(&acc)
-  assert.NoError(t, err)
+	acc := testutil.Accumulator{}
+	err := k.Gather(&acc)
+	assert.NoError(t, err)
 
-  fields := map[string]interface{}{
-    "total_count": int32(205),
-  }
+	fields := map[string]interface{}{
+		"total_count": 205,
+	}
 
-  acc.AssertContainsFields(t, "postqueue", fields)
+	acc.AssertContainsFields(t, "postqueue", fields)
 }
 
 func TestTotalCountNotExist(t *testing.T) {
 
-  k := Postqueue {
-    getPostQueueLog : func() ([]byte, error) {
+	output := "-- This is not what we expect"
+	k := Postqueue{
+		getPostQueueLog: func() ([]byte, error) {
 
-      log := `6C2BF14C1893     3334 Wed Mar 30 01:51:53  MAILER-DAEMON
-(delivery temporarily suspended: Host or domain name not found. Name service error for name=mail.abc.com type=AAAA: Host not found)
-                                         jsmith@abc.com
+			log := output
 
-631FB14C186A    19545 Mon Mar 28 16:51:53  MAILER-DAEMON
-(delivery temporarily suspended: Host or domain name not found. Name service error for name=mail.abc.com type=AAAA: Host not found)
-                                         jsmith@abc.com
+			out := []byte(log)
+			return out, nil
+		},
+	}
 
-600C614C180F    17108 Mon Mar 28 03:21:53  MAILER-DAEMON
-(delivery temporarily suspended: Host or domain name not found. Name service error for name=mail.abc.com type=AAAA: Host not found)
-                                         jsmith@abc.com`
-
-      out := []byte(log)
-      return out, nil
-    },
-  }
-
-  acc := testutil.Accumulator{}
-  err := k.Gather(&acc)
-  assert.Error(t, err)
-  assert.Contains(t, err.Error(), "The last line does not contain the total count: []")
+	acc := testutil.Accumulator{}
+	err := k.Gather(&acc)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), fmt.Sprintf("failed to parse count from last line of output: %s", output))
 }
 
 func TestEmptyLog(t *testing.T) {
 
-  k := Postqueue {
-    getPostQueueLog : func() ([]byte, error) {
+	k := Postqueue{
+		getPostQueueLog: func() ([]byte, error) {
 
-      log := ``
+			log := ``
 
-      out := []byte(log)
-      return out, nil
-    },
-  }
+			out := []byte(log)
+			return out, nil
+		},
+	}
 
-  acc := testutil.Accumulator{}
-  err := k.Gather(&acc)
-  assert.Error(t, err)
-  assert.Contains(t, err.Error(), "The last line does not contain the total count: []")
+	fields := map[string]interface{}{
+		"total_count": 0,
+	}
+	acc := testutil.Accumulator{}
+	k.Gather(&acc)
+	acc.AssertContainsFields(t, "postqueue", fields)
 }
