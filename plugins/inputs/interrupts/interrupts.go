@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	inputName = "interrupt"
+	inputName = "interrupts"
 )
 
 type Interrupt struct {
