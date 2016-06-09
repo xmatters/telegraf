@@ -1,20 +1,16 @@
 package openstack
 
 import (
-    "crypto/tls"
     "encoding/json"
     "fmt"
-    "io/ioutil"
-    "net/http"
 
     "github.com/influxdata/telegraf"
-    "github.com/influxdata/telegraf/plugins/inputs"
 )
 
 type Nova struct {
-    Authurl  string
-    Username string
-    Password string
+    Authurl   string
+    Tenant_id string
+    Token     string
 }
 
 type hypervisors struct {
@@ -51,64 +47,16 @@ type hypervisor struct {
   Hypervisor hypervisor_detail
 }
 
-func (n *Nova) Description() string {
-    return "A plugin to gather Openstack Nova metrics"
-}
-
-func (n *Nova) setDefaults() {
-        if n.Authurl == "" {
-                fmt.Println("No authurl given, exiting")
-        }
-        if n.Username == "" {
-                fmt.Println("No username given, exiting")
-        }
-        if n.Password == "" {
-                fmt.Println("No password given, exiting")
-        }
-}
-
-func (n *Nova) SampleConfig() string {
-    return `
-  # The keystone endpoint to authenticate against, can be http or https
-  authurl = "http://keystone.url"
-  ## Username to authenticate with
-  username = "admin"
-  ## Password to authenticate with
-  password = "admin"
-`
-}
-
-func getData(auth_url string, token string) (payload []byte) {
-
-    tr := &http.Transport{
-        TLSClientConfig: &tls.Config{InsecureSkipVerify : true},
-    }
-
-    req, _ := http.NewRequest("GET", auth_url, nil)
-    req.Header.Set("X-Auth-Token", token)
-    req.Header.Set("Accept", "application/json")
-
-    client := &http.Client{Transport: tr}
-    resp, _ := client.Do(req)
-    defer resp.Body.Close()
-
-    payload, _ = ioutil.ReadAll(resp.Body)
-    return
-
-}
-
 func (n *Nova) Gather(acc telegraf.Accumulator) error {
-    n.setDefaults()
-    token, tenant_id := getToken(n.Authurl,n.Username,n.Password)
-    url := fmt.Sprintf("%s:8774/v2/%s/os-hypervisors",  n.Authurl, tenant_id)
+    url := fmt.Sprintf("%s:8774/v2/%s/os-hypervisors",  n.Authurl, n.Tenant_id)
 
-    hypervisor_list := getData(url,token)
+    hypervisor_list := getData(url,n.Token)
 
     parsed := make(map[string][]hypervisors)
     json.Unmarshal([]byte(hypervisor_list), &parsed)
     for _, h := range parsed["hypervisors"] {
-        url := fmt.Sprintf("%s:8774/v2/%s/os-hypervisors/%v",  n.Authurl, tenant_id, h.Id)
-        hypervisor_detail_str := getData(url,token)
+        url := fmt.Sprintf("%s:8774/v2/%s/os-hypervisors/%v",  n.Authurl, n.Tenant_id, h.Id)
+        hypervisor_detail_str := getData(url,n.Token)
         parsed := hypervisor{}
         json.Unmarshal([]byte(hypervisor_detail_str), &parsed)
         fmt.Println(parsed.Hypervisor.HostIp)
@@ -118,5 +66,4 @@ func (n *Nova) Gather(acc telegraf.Accumulator) error {
 }
 
 func init() {
-    inputs.Add("nova", func() telegraf.Input { return &Nova{} })
 }

@@ -35,3 +35,22 @@ func getToken(auth_url string, user string, pass string) (token, tenant_id strin
     return
 
 }
+
+func getData(auth_url string, token string) (payload []byte) {
+
+    tr := &http.Transport{
+        TLSClientConfig: &tls.Config{InsecureSkipVerify : true},
+    }
+
+    req, _ := http.NewRequest("GET", auth_url, nil)
+    req.Header.Set("X-Auth-Token", token)
+    req.Header.Set("Accept", "application/json")
+
+    client := &http.Client{Transport: tr}
+    resp, _ := client.Do(req)
+    defer resp.Body.Close()
+
+    payload, _ = ioutil.ReadAll(resp.Body)
+    return
+
+}
